@@ -7,6 +7,8 @@ __version__ = '0.1.0'
 
 #############IMPROVEMENTS#############
 
+- add a docker file for the project
+
  - Plot a prediction map per epoch can help in training a new model
  
  - adding image name to the tfrecors and dataset help keeping the full metadata
