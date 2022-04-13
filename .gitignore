@@ -1,0 +1,16 @@
+__pycache__/
+.idea
+
+/data
+
+**/__pycache__
+**/archived
+**/archived
+
+**/logs/*
+**/models/*
+**/plots/*
+**/tensorboard/*
+
+**/models_code/*
+**/models_trained/*
