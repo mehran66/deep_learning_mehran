@@ -12,5 +12,4 @@ __pycache__/
 **/plots/*
 **/tensorboard/*
 
-**/models_code/*
 **/models_trained/*
