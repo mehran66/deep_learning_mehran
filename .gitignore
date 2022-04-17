@@ -13,3 +13,4 @@ __pycache__/
 **/tensorboard/*
 
 **/models_trained/*
+**/models_checkpoints/*

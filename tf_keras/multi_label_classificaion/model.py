@@ -2,9 +2,11 @@ import inspect
 import tensorflow as tf
 
 from tensorflow.keras import layers, Model, applications
+from tensorflow_addons.metrics import FBetaScore
 
 
-def model_application(img_size, resize, strategy, model_name, weights, multiclass, n_classes, optimizer, lr, mix_precision):
+
+def model_application(img_size, resize, strategy, model_name, weights, n_classes, optimizer, lr, mix_precision, classification_type):
     # https://keras.io/api/applications/
     '''
      ['DenseNet121', 'DenseNet169', 'DenseNet201', 'EfficientNetB0', 'EfficientNetB1', 'EfficientNetB2', 'EfficientNetB3', 'EfficientNetB4', 'EfficientNetB5', 'EfficientNetB6',
@@ -60,7 +62,7 @@ def model_application(img_size, resize, strategy, model_name, weights, multiclas
         x = layers.Dense(units=1024, activation=tf.nn.relu)(x)
         x = layers.Dropout(0.2)(x)
 
-        if multiclass:
+        if classification_type == 'multiclass':
             if mix_precision:
                 x = layers.Dense(n_classes)(x)
                 outputs = layers.Activation("softmax", dtype=tf.float32, name="softmax_float32")(x)
@@ -68,12 +70,13 @@ def model_application(img_size, resize, strategy, model_name, weights, multiclas
                 outputs = layers.Dense(n_classes, activation="softmax")(x)
 
         else:
-            n_classes = 1 if n_classes == 2 else n_classes
+            n_classes = 1 if classification_type == 'binary' else n_classes
             if mix_precision:
                 x = layers.Dense(n_classes)(x)
                 outputs = layers.Activation("sigmoid", dtype=tf.float32, name="sigmoid_float32")(x)
             else:
                 outputs = layers.Dense(n_classes, activation="sigmoid")(x)
+
         model = Model(inputs1, outputs)
 
 
@@ -84,19 +87,28 @@ def model_application(img_size, resize, strategy, model_name, weights, multiclas
         elif optimizer.lower() == 'sgd':
             optim = tf.keras.optimizers.SGD(learning_rate=lr)
 
-        if multiclass:
+        if classification_type == 'multiclass':
             loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
-            metrics = ["accuracy"]
-        else:
+            metrics = ["accuracy", FBetaScore(num_classes=n_classes, average='weighted', beta=2.0, threshold=0.5, name='fbeta')]
+            custom_objects = {'fbeta': FBetaScore}
+        elif classification_type == 'binary':
             loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)
             metrics = [tf.keras.metrics.BinaryAccuracy(name='accuracy'), tf.keras.metrics.Recall(name="recall"),
                        tf.keras.metrics.Precision(name="precision"),
                        tf.keras.metrics.AUC(name='AUC')]
+            custom_objects = {}
+        elif classification_type == 'multilabel':
+            loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)
+            metrics = [tf.keras.metrics.BinaryAccuracy(name='accuracy'), tf.keras.metrics.Recall(name="recall"),
+                       tf.keras.metrics.Precision(name="precision"),
+                       tf.keras.metrics.AUC(name='AUC'),
+                       FBetaScore(num_classes=n_classes, average='weighted', beta=2.0, threshold=0.5, name='fbeta')]
+            custom_objects = {'fbeta': FBetaScore}
 
         # Compile the model
         model.compile(loss=loss, optimizer=optim, metrics=metrics)
 
-    return model
+    return model, custom_objects
 
     # ===============================================================================
     # tensorflow hub: it did not perform well

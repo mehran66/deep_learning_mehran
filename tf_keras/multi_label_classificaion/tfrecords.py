@@ -6,9 +6,11 @@ import glob
 import os
 from sklearn.utils import shuffle
 import time
+import pandas as pd
+import numpy as np
 import tensorflow as tf
 
-from config import dir_params, tfrecords_param
+from config import dir_params, tfrecords_param, data_params
 
 # References
 # https://www.tensorflow.org/tutorials/load_data/tfrecord
@@ -40,6 +42,10 @@ def _int64_feature(value):
   """Returns an int64_list from a bool / enum / int / uint."""
   return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
+def _int64_featur_list(value):
+    """Returns an int64_list from a bool / enum / int / uint list."""
+    return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
+
 def serialize_array(array):
   array = tf.io.serialize_tensor(array)
   return array
@@ -58,6 +64,16 @@ def parse_single_image(image, label, mode = 'classification'):
             'channel_image': _int64_feature(image.shape[2]),
             'raw_image': _bytes_feature(tf.io.encode_jpeg(image)), # tf.io.serialize_tensor or tf.io.encode_jpeg or tf.io.encode_png or tf.io.encode_jpeg(image).numpy(), image.tobytes()
             'label': _int64_feature(label)
+        }
+
+    if mode == 'multilabel':
+        data = {
+            'height': _int64_feature(image.shape[0]),
+            'width': _int64_feature(image.shape[1]),
+            'channel_image': _int64_feature(image.shape[2]),
+            'raw_image': _bytes_feature(tf.io.encode_jpeg(image)), # tf.io.serialize_tensor or tf.io.encode_jpeg or tf.io.encode_png or tf.io.encode_jpeg(image).numpy(), image.tobytes()
+            #'label': _bytes_feature(str.encode(label)) # This is for a string case
+            'label': _int64_featur_list(label.tolist())
         }
 
     elif mode == 'segmentation':
@@ -138,6 +154,17 @@ def parse_tfr_element(element, normalize=False, mode='segmentation'):
             'raw_image': tf.io.FixedLenFeature([], tf.string),
             'channel_image': tf.io.FixedLenFeature([], tf.int64),
         }
+
+    if mode == 'multilabel':
+        data = {
+            'height': tf.io.FixedLenFeature([], tf.int64),
+            'width': tf.io.FixedLenFeature([], tf.int64),
+            #'label': tf.io.FixedLenFeature([], tf.string), #This is for a string case
+            'label': tf.io.FixedLenSequenceFeature([], tf.int64, allow_missing=True),
+            'raw_image': tf.io.FixedLenFeature([], tf.string),
+            'channel_image': tf.io.FixedLenFeature([], tf.int64),
+        }
+
     elif mode == 'segmentation':
         data = {
             'height': tf.io.FixedLenFeature([], tf.int64, default_value=0),
@@ -173,7 +200,6 @@ def parse_tfr_element(element, normalize=False, mode='segmentation'):
     return (image, label)
 
 
-
 def get_dataset(tfr_dir: str = "/content", pattern: str = "*.tfrecords", mode='segmentation'):
     files = glob.glob(tfr_dir + r'/' +  pattern, recursive=False)
 
@@ -207,10 +233,16 @@ def tfrecord(assess_data=True):
     start_time = time.time()
 
     # read the inputs from the config.py file
-    mode = 'classification'
 
     data_dir = dir_params['data_dir']
     plot_dir = dir_params['plot_dir']
+
+    classification_type = data_params['classification_type']
+
+    if classification_type == 'multilabel':
+        multi_label_csv = tfrecords_param['multi_label_csv']
+
+    mode = 'multilabel' if classification_type=='multilabel' else 'classification'
 
     shard_size = tfrecords_param['shard_size']
     img_height = tfrecords_param['img_size'][0]
@@ -228,6 +260,7 @@ def tfrecord(assess_data=True):
     print("importing data from config file...")
     print(f"plot directory: {plot_dir}")
     print(f"data directory: {data_dir}")
+    print(f"classification type is: {data_dir}")
     print(f"mode: {mode}")
     print(f"shrad size: {shard_size}")
     print(f"image height: {img_height}")
@@ -237,15 +270,29 @@ def tfrecord(assess_data=True):
 
     images = []
     classes = []
-    for label_name in os.listdir(data_dir):
-        if os.path.isdir('/'.join([data_dir, label_name])):
-            cls = label_to_class[label_name]
+    if classification_type != 'multilabel':
+        for label_name in os.listdir(data_dir):
+            if os.path.isdir('/'.join([data_dir, label_name])):
+                cls = label_to_class[label_name]
 
-            for img_name in os.listdir('/'.join([data_dir, label_name])):
-                if img_name.endswith('jpg'):
+                for img_name in os.listdir('/'.join([data_dir, label_name])):
+                    if img_name.endswith('jpg'):
 
-                    images.append('/'.join([data_dir, label_name, img_name]))
-                    classes.append(cls)
+                        images.append('/'.join([data_dir, label_name, img_name]))
+                        classes.append(cls)
+    else:
+        df_train = pd.read_csv(f'{data_dir}/{multi_label_csv}')
+        folder_name = [i for i in os.listdir(data_dir) if os.path.isdir('/'.join([data_dir, i]))]
+        if len(folder_name) != 1:
+            raise ValueError("only the image folder should exist in the data folder. Plz check it out! ")
+
+        for label in label_to_class.keys():
+            df_train[label] = df_train[df_train.columns[1]].apply(lambda x: 1 if label in x.split(' ') else 0)
+
+        df_train['image_dir'] = df_train[df_train.columns[0]].apply(lambda x: os.path.join(data_dir, folder_name[0], x + '.jpg'))
+
+        images = df_train['image_dir'].copy().values
+        classes = df_train[label_to_class.keys()].copy().values
 
     images, classes = shuffle(images, classes, random_state=0)
 
@@ -267,17 +314,24 @@ def tfrecord(assess_data=True):
         print("\n#########################################")
         print("\nAssessing tfrecords ...")
 
-        parsed_dataset = get_dataset(tfr_dir=data_dir, pattern="*.tfrecords", mode='classification')
+        parsed_dataset = get_dataset(tfr_dir=data_dir, pattern="*.tfrecords", mode=mode)
         dataset = parsed_dataset.shuffle(2048)
         dataset = dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
         dataset = dataset.batch(batch_size)
 
         def show_batch(image_batch, label_batch, name):
-            plt.figure(figsize=(10, 10))
+            plt.figure(figsize=(20, 10))
             for n in range(16):
                 plt.subplot(4, 4, n + 1)
                 plt.imshow(image_batch[n])
-                plt.title(class_to_label[label_batch[n]])
+                if classification_type != 'multilabel':
+                    plt.title(class_to_label[label_batch[n]])
+                else:
+                    # plt.title(label_batch[n].decode()) # this is for string label
+                    mykeys = np.where(label_batch.numpy() == 1)
+                    values = [class_to_label[x] for x in mykeys[0]]
+                    label = ', '.join(values)
+                    plt.title(label)
                 plt.axis("off")
             plt.savefig(f'{plot_dir}/{name}')
 
@@ -295,10 +349,6 @@ def tfrecord(assess_data=True):
 
 if __name__ == "__main__":
     tfrecord(assess_data=True)
-
-
-
-    
 
 
 

@@ -7,11 +7,30 @@ import matplotlib.pyplot as plt
 import shutil
 import json
 from tqdm import tqdm
+import cv2
 
 import tensorflow as tf
 print(f'Tensorflow version is: {tf.__version__}')
 
 from config import dir_params, preprocess_parames, patch_params
+
+
+
+def generate_border(image_file, border_size=5, n_erosions=1, object_value=1):
+
+    image = np.array(Image.open(image_file))
+
+    erosion_kernel = np.ones((3, 3), np.uint8)
+    eroded_image = cv2.erode(image, erosion_kernel, iterations=n_erosions)
+
+    kernel_size = 2 * border_size + 1
+    dilation_kernel = np.ones((kernel_size, kernel_size), np.uint8)
+    dilated_image = cv2.dilate(eroded_image, dilation_kernel, iterations=1)
+    dilated_image_2 = np.where(dilated_image == object_value, object_value+1, dilated_image)
+
+    image_with_border = np.where(eroded_image >= object_value, object_value, dilated_image_2)
+
+    return image_with_border
 
 def preprocess(assess_data=True):
 
@@ -40,6 +59,7 @@ def preprocess(assess_data=True):
     n_classes = preprocess_parames['n_classes']
     label_to_class = preprocess_parames['label_to_class']
 
+    create_border = preprocess_parames['create_border']
 
     print("\n########################################")
     print("declare parameters")
@@ -53,6 +73,7 @@ def preprocess(assess_data=True):
     print(f"mask size would be: {mask_size}")
     print(f"number of classes are: {n_classes}")
     print(f"labels are: {label_to_class}")
+    print(f"make border is: {create_border}")
 
     assert img_size == img_size
 
@@ -178,6 +199,13 @@ def preprocess(assess_data=True):
         json.dump(map_lbls, f, indent=2)
 
     print(f"labels to class dictinary were exported as a json file in: {os.getcwd()}/label_to_class.json")
+
+
+    if create_border:
+        for img_name in tqdm(os.listdir(preprocessed_masks), desc='make borders ...'):
+            if img_name.endswith('png'):
+                processed_image = generate_border('/'.join([preprocessed_masks, img_name]), border_size=5, n_erosions=1)
+                Image.fromarray(processed_image).save('/'.join([preprocessed_masks, img_name[:-4] + '.png']))
 
     print("\n########################################")
     print(f"\nit took {(time.time() - start_time)} seconds to preprocess data")

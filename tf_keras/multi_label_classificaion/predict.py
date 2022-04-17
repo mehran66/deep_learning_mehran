@@ -37,17 +37,23 @@ def predict():
     model_check_points = dir_params['ckpt_dir']
     img_size = data_params['img_size']
 
+    classification_type = data_params['classification_type']
+
     label_to_class = tfrecords_param['label_to_class']
     class_to_label = {v: k for k, v in label_to_class.items()}
 
     batch_size = predict_param['batch_size']
 
+    model_name = predict_param['model_name']
+
     print("\nRead the inputs from the config.py file ...")
     print(f"prediction directory is: {pred_dir}")
     print(f"model check point directory is: {model_check_points}")
+    print(f"classification type is: {classification_type}")
     print(f"image size is: {img_size}")
     print(f"label to class is: {label_to_class}")
     print(f"batch size is: {batch_size}")
+    print(f"model name is: {model_name}")
 
 
     path = Path(pred_dir)
@@ -63,8 +69,8 @@ def predict():
         if '.jpg' in files:
             my_images.append(files)
 
-    print(f"\nload the model from: {model_check_points}/fine-tune-min-val_loss.hdf5")
-    model = tf.keras.models.load_model(model_check_points + r'/fine-tune-min-val_loss.hdf5')
+    print(f"\nload the model from: {model_check_points}/{model_name}")
+    model = tf.keras.models.load_model(model_check_points + f'/{model_name}', compile=False)
 
     start_time = time.time()
 
@@ -79,10 +85,28 @@ def predict():
 
     print(f"it took {(time.time() - start_time)} seconds to run prediction on {nbr_images} images")
 
-    prob = [i.max() for i in pred]
-    pred_class = [np.argmax(i) for i in pred]
-    pred_label = [class_to_label[i] for i in pred_class]
-    df = pd.DataFrame(list(zip(my_images, prob, pred_class, pred_label)), columns=['images', 'prob', 'pred_class', 'pred_label'])
+    if classification_type == 'multiclasse':
+        prob = [i.max() for i in pred]
+        pred_class = [np.argmax(i) for i in pred]
+        pred_label = [class_to_label[i] for i in pred_class]
+
+    elif classification_type == 'binary':
+        prob = [probas.tolist()[0] for probas in pred]
+        pred_class = [int(np.round(probas).tolist()[0]) for probas in pred]
+        pred_label = [class_to_label[i] for i in pred_class]
+
+    elif classification_type == 'multilabel':
+        pred_class = [np.where((probas > 0.5) == 1) for probas in pred]
+        prob = [np.take(probas, cls).tolist()[0] for probas, cls in zip(pred, pred_class)]
+        pred_label = [np.take(np.array(list(class_to_label.values())), i) for i in pred_class]
+        pred_label = [', '.join(i.tolist()[0]) for i in pred_label]
+
+    df = pd.DataFrame(list(zip(my_images, prob, pred_class, pred_label)),
+                      columns=['images', 'prob', 'pred_class', 'pred_label'])
+
+    if classification_type == 'multilabel':
+        for label in label_to_class.keys():
+            df[label] = pred[:,label_to_class[label]]
 
     print(f"\nsave the results to: {pred_dir}/predictions.csv")
     df.to_csv(f'{pred_dir}/predictions.csv')

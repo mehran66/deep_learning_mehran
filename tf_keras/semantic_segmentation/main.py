@@ -5,7 +5,7 @@ print(f"__date__ = {datetime.datetime.now()}")
 print("__license__ = Feel free to copy :)")
 import sys; print(sys.version)
 import platform; print(platform.platform())
-import tensorflow; print(f'scikit-image version: {tensorflow.__version__}')
+import tensorflow; print(f'tensorflow version: {tensorflow.__version__}')
 
 import argparse
 

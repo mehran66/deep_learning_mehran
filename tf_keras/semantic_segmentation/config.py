@@ -2,7 +2,7 @@
 Assumptions
 - Images are 3 band RGB in jpg format
 - Labels are 1 band image in png format
-- Height and width of input images should be divisible by 32 for all models
+- Height and width of trained ready images should be divisible by 32 for all models
 
 '''
 
@@ -16,11 +16,11 @@ dname = os.path.dirname(abspath)
 os.chdir(dname)
 
 # Set data directory
-data_dir = r'D:\deep_learning\data\building_footprint'
+data_dir = r'D:\deep_learning_mehran\data\building_footprint'
 
 # Set directories for saving model weights and tensorboard information
 cwd_dir = os.getcwd()
-ckpt_dir = op.join(cwd_dir, "models_trained")
+ckpt_dir = op.join(cwd_dir, "models_checkpoints")
 tboard_dir = op.join(cwd_dir, "tensorboard")
 plot_dir = op.join(cwd_dir, "plots")
 log_dir = op.join(cwd_dir, "logs")
@@ -60,6 +60,7 @@ preprocess_parames = dict(input_images_dir_name='images_512', # folder name of i
                           preprocessed_masks_dir_name='preprocessed_masks', # processed masks are saved in this folder
                           img_size=(512, 512, 3), # output image size
                           mask_size=(512, 512,1), # output mask size;
+                          create_border=True, # Create border pixels from binary masks.
                           n_classes=2,
                           label_to_class={'background': 0, 'buildings': 255})
 
@@ -191,7 +192,7 @@ fine_tune_params = dict(lr=1e-4,
                         n_epo=3)
 #######################################################################################################################
 predict_param = dict(batch_size=100, # batch size is used to run predictions of batches of images
-                     model_name='fine_tune_val_loss_min.hdf5', # this model is assumed to be in the models_trained folder
+                     model_name='fine_tune_val_loss_min.hdf5', # this model is assumed to be in the models_checkpoints folder
                      binary_threshold=None, # value(0-1)/None/calculate
                      measure=True) # measure the geometrical characteristics of extracted segments
 

@@ -1,0 +1,13 @@
+python=3.95
+matplotlib
+pandas
+numpy
+sklearn
+albumentations
+tqdm
+focal-loss
+pydot
+graphviz
+segmentation_models
+keras_unet_collection
+cv2

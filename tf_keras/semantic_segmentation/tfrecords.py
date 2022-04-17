@@ -1,17 +1,12 @@
 import sys
-
 from functools import partial
 import matplotlib.pyplot as plt
 import tqdm
 import glob
 import os
-from sklearn.utils import shuffle
 import time
 import numpy as np
-
 import tensorflow as tf
-
-print(f'Tensorflow version is: {tf.__version__}')
 
 from config import dir_params, tfrecords_param
 
@@ -226,8 +221,8 @@ def get_dataset(tfr_dir: str = "/content", pattern: str = "*.tfrecords", mode='s
 def tfrecord(assess_data=True):
 
     print("\n######################################################")
-    print("\n#####################Create TfRecords######################")
-    print("\n######################################################")
+    print("#####################Create TfRecords######################")
+    print("######################################################")
 
     start_time = time.time()
 

@@ -2,19 +2,14 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 from glob import glob
-import pandas as pd
 import albumentations as A
-from pathlib import Path
-from functools import partial
 import time
 import collections
 import json
-
 import tensorflow as tf
 
 from config import dir_params, tfrecords_param, data_params
 from tfrecords import get_dataset
-
 
 def strg():
 
@@ -321,7 +316,7 @@ def load_data(assess_data=True):
     test_ds = test_ds.batch(batch_size).prefetch(buffer_size=tf.data.AUTOTUNE)
 
     print("\n******************************************************")
-    print("\ndata loaded successfully and datasets were generated")
+    print("data loaded successfully and datasets were generated")
     print(f"it took {(time.time() - start_time)} seconds to import data and create datasets")
 
     if assess_data:

@@ -10,6 +10,7 @@ from skimage.segmentation import watershed
 from skimage.feature import peak_local_max
 from skimage.measure import find_contours, approximate_polygon
 from skimage.color import label2rgb
+import cv2
 
 def measure_mask(image, mask, probability=True):
 

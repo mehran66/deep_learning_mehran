@@ -28,6 +28,7 @@
 ## Pyton libraries used in the package
 ```python 3.95
 tensorflow
+tensorflow-addons
 matplotlib
 pandas
 sklearn

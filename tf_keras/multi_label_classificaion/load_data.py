@@ -59,6 +59,11 @@ def load_data(assess_data=True):
 
     augmentation = data_params['augmentation']
 
+    classification_type = data_params['classification_type']
+
+    if classification_type == 'multilabel':
+        multi_label_csv = tfrecords_param['multi_label_csv']
+
     label_to_class = tfrecords_param['label_to_class']
     # create lables if the label_to_class input is None
     if label_to_class == None:
@@ -79,6 +84,7 @@ def load_data(assess_data=True):
     print(f"batch size is: {batch_size}")
     print(f"image size is: {img_size}")
     print(f"image augmentation is: {augmentation}")
+    print(f"multi_label is: {classification_type}")
     print(f"labels are is: {label_to_class}")
     print(f"number of classes are: {n_classes}")
     print(f"train split is: {train_split}")
@@ -98,30 +104,82 @@ def load_data(assess_data=True):
         tf_files = glob.glob(data_dir + r'/' + "*.tfrecords", recursive=False)
         nbr_images = sum(1 for _ in tf.data.TFRecordDataset(tf_files))
         print(f"there are {nbr_images} images encoded in the {len(tf_files)} input rfrecords")
-        parsed_dataset = get_dataset(tfr_dir=data_dir, pattern="*.tfrecords", mode='classification')
+
+        if classification_type != 'multilabel':
+            parsed_dataset = get_dataset(tfr_dir=data_dir, pattern="*.tfrecords", mode='classification')
+        else:
+            parsed_dataset = get_dataset(tfr_dir=data_dir, pattern="*.tfrecords", mode='multilabel')
+
+            df_train = pd.read_csv(f'{data_dir}/{multi_label_csv}')
+            for label in label_to_class.keys():
+                df_train[label] = df_train[df_train.columns[1]].apply(lambda x: 1 if label in x.split(' ') else 0)
 
     else:
         print("\n******************************************************")
         print("****Reading input data from the raw jpg images")
-        path = Path(data_dir)
-        nbr_images = (sum(1 for x in path.glob('**/*.jpg') if x.is_file()))
+        if classification_type != 'multilabel':
+            path = Path(data_dir)
+            nbr_images = (sum(1 for x in path.glob('**/*.jpg') if x.is_file()))
 
-        load_split = partial(
-            tf.keras.preprocessing.image_dataset_from_directory,
-            data_dir,
-            validation_split=None,
-            shuffle=True,
-            seed=123,
-            image_size=(img_height, img_width),
-            batch_size=nbr_images,
-            class_names=list(label_to_class.keys())
-        )
+            load_split = partial(
+                tf.keras.preprocessing.image_dataset_from_directory,
+                data_dir,
+                validation_split=None,
+                shuffle=True,
+                seed=123,
+                image_size=(img_height, img_width),
+                batch_size=nbr_images,
+                class_names=list(label_to_class.keys())
+            )
 
-        parsed_dataset = load_split()
-        # ds_valid = load_split(subset='validation')
+            parsed_dataset = load_split()
+            # ds_valid = load_split(subset='validation')
 
-        assert parsed_dataset.class_names==list(label_to_class.keys())
-        class_names = parsed_dataset.class_names
+            assert parsed_dataset.class_names==list(label_to_class.keys())
+            class_names = parsed_dataset.class_names
+        else:
+
+            df_train = pd.read_csv(f'{data_dir}/{multi_label_csv}')
+            nbr_images = df_train.shape[0] - 1
+            folder_name = [i for i in os.listdir(data_dir) if os.path.isdir('/'.join([data_dir, i]))]
+            if len(folder_name) != 1:
+                raise ValueError("only the image folder should exist in the data folder. Plz check it out! ")
+
+            for label in label_to_class.keys():
+                df_train[label] = df_train[df_train.columns[1]].apply(lambda x: 1 if label in x.split(' ') else 0)
+
+            df_train['image_dir'] = df_train[df_train.columns[0]].apply(lambda x: os.path.join(data_dir, folder_name[0], x + '.jpg'))
+
+            path_to_images = df_train['image_dir'].copy().values
+            labels_array = df_train[label_to_class.keys()].copy().values
+            parsed_dataset = tf.data.Dataset.from_tensor_slices((path_to_images, labels_array))
+
+            def process_path(image, label):
+                image = tf.io.read_file(image)
+                image = tf.io.decode_jpeg(image, channels=3)
+
+                return image, label
+
+            parsed_dataset = parsed_dataset.map(process_path, num_parallel_calls=tf.data.AUTOTUNE)
+
+    # image_batch, label_batch = next(iter(parsed_dataset))
+    # image_batch
+    # image = tf.io.read_file(image_batch)
+    # image = tf.io.decode_raw(image, tf.uint8)
+    #
+    # image = tf.io.decode_jpeg(image, channels=3)
+    # tf.io.parse_tensor(image, out_type=tf.uint8)
+    #
+    # image = tf.reshape(image, shape=[height, width, channel_image])
+    # tf.io.decode_image(
+    #     image,
+    #     channels=None,
+    #     dtype=tf.dtypes.uint8)
+    #
+    # tf.cast(image_batch, tf.uint8)
+    # image = tf.io.read_file(tf.cast(image_batch, tf.uint8))
+
+
 
     # generate training/validation/test dataset
     assert (train_split + test_split + val_split) == 1
@@ -231,12 +289,18 @@ def load_data(assess_data=True):
         print(np.min(first_image), np.max(first_image))
 
         # visualize 10 images from dataset
-        plt.figure(figsize=(10, 10))
+        plt.figure(figsize=(20, 10))
         for i in range(16):
             ax = plt.subplot(4, 4, i + 1)
             image = (image_batch[i]/255).numpy().astype("float32") #float32
             plt.imshow(image)
-            plt.title(class_to_label[tf.round(label_batch[i]).numpy()])
+            if classification_type != 'multilabel':
+                plt.title(class_to_label[tf.round(label_batch[i]).numpy()])
+            else:
+                mykeys = np.where(label_batch[i].numpy() == 1)
+                values = [class_to_label[x] for x in mykeys[0]]
+                label = ', '.join(values)
+                plt.title(label)
             plt.axis("off")
         #plt.show()
         plt.savefig(f'{plot_dir}/data_load_step_sample_images_lables.png')
@@ -248,54 +312,102 @@ def load_data(assess_data=True):
             tmp = 16 # nbr of images to plot
             if batch_size<tmp:
                 tmp = batch_size
-            plt.figure(figsize=(10, 10))
+            plt.figure(figsize=(20, 10))
             for n in range(tmp):
                 images, labels = process_data(image_batch, label_batch)
                 ax = plt.subplot(4, 4, n + 1)
                 image = (images / 255).numpy().astype("float32")  # float32
                 plt.imshow(image)
-                plt.title(class_to_label[tf.round(labels).numpy()])
+                if classification_type != 'multilabel':
+                    plt.title(class_to_label[tf.round(labels).numpy()])
+                else:
+                    mykeys = np.where(labels.numpy() == 1)
+                    values = [class_to_label[x] for x in mykeys[0]]
+                    label = ', '.join(values)
+                    plt.title(label)
                 plt.axis("off")
             plt.savefig(f'{plot_dir}/load_data_step_image_augmentation.png')
             plt.close()
             print("\nSome sample augmented images plotted in the following file. please check!")
             print(f'{plot_dir}/load_data_step_image_augmentation.png')
 
-        train_lables = []
-        for i, l in train_ds:
-            train_lables.extend(list(l.numpy()))
+        if classification_type != 'multilabel':
+            train_lables = []
+            for i, l in train_ds:
+                train_lables.extend(list(l.numpy()))
 
-        val_lables = []
-        for i, l in val_ds:
-            val_lables.extend(list(l.numpy()))
+            val_lables = []
+            for i, l in val_ds:
+                val_lables.extend(list(l.numpy()))
 
-        test_lables = []
-        for i, l in test_ds:
-            test_lables.extend(list(l.numpy()))
+            test_lables = []
+            for i, l in test_ds:
+                test_lables.extend(list(l.numpy()))
 
-        _, train_count = np.unique(train_lables, return_counts=True)
-        _, val_count = np.unique(val_lables, return_counts=True)
-        _, test_count = np.unique(test_lables, return_counts=True)
+            _, train_count = np.unique(train_lables, return_counts=True)
+            _, val_count = np.unique(val_lables, return_counts=True)
+            _, test_count = np.unique(test_lables, return_counts=True)
 
-        df = pd.DataFrame(data = (train_count,val_count,test_count))
-        df = df.T
-        df['Index']=list(label_to_class.keys())
-        df.columns = ['Train', 'Validation','Test','Name']
-        df
+            df = pd.DataFrame(data = (train_count,val_count,test_count))
+            df = df.T
+            df['Index']=list(label_to_class.keys())
+            df.columns = ['Train', 'Validation','Test','Name']
+            df
 
-        plt.figure(figsize=(10, 10))
-        plt.pie(train_count,
-               explode=(0,) * n_classes,
-               labels = list(label_to_class.keys()),
-               autopct = '%1.1f%%')
-        plt.axis('equal')
-        plt.title('Proportion of each observed quantity in train dataset')
-        #plt.show()
-        plt.savefig(f'{plot_dir}/data_load_step_label_distribution.png')
-        plt.close()
-        print("\nSome sample images and labels plotted in the following files. please check!")
-        print(f'{plot_dir}/data_load_step_sample_images_lables.png')
-        print(f'{plot_dir}/data_load_step_label_distribution.png')
+            plt.figure(figsize=(10, 10))
+            plt.pie(train_count,
+                   explode=(0,) * n_classes,
+                   labels = list(label_to_class.keys()),
+                   autopct = '%1.1f%%')
+            plt.axis('equal')
+            plt.title('Proportion of each observed quantity in train dataset')
+            #plt.show()
+            plt.savefig(f'{plot_dir}/data_load_step_label_distribution.png')
+            plt.close()
+            print("\nSome sample images and labels plotted in the following files. please check!")
+            print(f'{plot_dir}/data_load_step_sample_images_lables.png')
+            print(f'{plot_dir}/data_load_step_label_distribution.png')
+
+        if classification_type == 'multilabel':
+            labels = df_train[df_train.columns[1]].apply(lambda x: x.split(' '))
+            from collections import Counter, defaultdict
+            counts = defaultdict(int)
+            for l in labels:
+                for l2 in l:
+                    counts[l2] += 1
+
+            counts_df = pd.DataFrame.from_dict(counts, orient='index')
+            counts_df.columns = ['count']
+            counts_df.sort_values('count', ascending=False, inplace=True)
+
+            fig, ax = plt.subplots()
+            ax = ax.bar(counts_df.index, counts_df['count'])
+            fig.set_size_inches(12, 8)
+            plt.xticks(rotation=45)
+            plt.savefig(f'{plot_dir}/data_load_step_label_distribution.png')
+            plt.close()
+            print("\ndistribution of labels were ploted in the following file!")
+            print(f'{plot_dir}/data_load_step_label_distribution.png')
+
+            def show_cooccurence_matrix(labels):
+                numeric_df = df_train[labels]
+                co_matrix = numeric_df.T.dot(numeric_df)
+
+                fig, ax = plt.subplots(figsize=(7, 7))
+                im = ax.imshow(co_matrix)
+                ax.set_xticks(np.arange(len(labels)))
+                ax.set_yticks(np.arange(len(labels)))
+                ax.set_xticklabels(labels, rotation=45, ha='right', rotation_mode='anchor')
+                ax.set_yticklabels(labels)
+                cbar = fig.colorbar(im, ax=ax)  # not sure why this isn't working...
+                #plt.show(fig)
+                plt.savefig(f'{plot_dir}/data_load_step_cooccurence_matrix.png')
+                plt.close()
+                print("\ncooccurence matrix of labels were plotted in the following file!")
+                print(f'{plot_dir}/data_load_step_cooccurence_matrix.png')
+
+            # compute the co-ocurrence matrix
+            show_cooccurence_matrix(list(label_to_class.keys()))
 
     print("\ndata loaded successfully")
 

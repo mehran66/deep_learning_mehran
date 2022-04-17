@@ -2,10 +2,13 @@
 Assumptions
 - Images are 3 band RGB in jpg format
 - Images are stored in different folders corresponding to each class. Folder name is used as class name
+- for multilabel classification, data folder includes the image folder with all images as 3 band RGB in jpg format and
+    one csv file that maps image name (with extension) to labels (space delimited labels)
 '''
 
 import os
 from os import path as op
+import pandas as pd
 
 
 # Set working directory
@@ -14,7 +17,7 @@ dname = os.path.dirname(abspath)
 os.chdir(dname)
 
 # Set data directory
-data_dir = r'D:\deep_learning_mehran\data\BrainTumor'
+data_dir = r'D:\deep_learning_mehran\data\planet_test'
 # prediction directory where images are stored to be classified
 pred_dir = r'D:\deep_learning_mehran\data\test'
 
@@ -45,28 +48,19 @@ dir_params = dict(data_dir = data_dir,
 
 #######################################################################################################################
 # create tfrecords
-tfrecords_param = dict(shard_size=100, # how many images per tfrecords
+tfrecords_param = dict(shard_size=10000, # how many images per tfrecords
                        img_size=(256, 256, 3), # input image size
-                       n_classes = 2,# number of classes
-                       label_to_class={
-                           'hemmorhage_data': 0,
-                           'non_hemmorhage_data': 1}) # label_to_class can be None if there are too many classes and the following code will figure it out!
+                       multi_label_csv='train_v2.csv', # set to input csv file name for multilabel classification and None for binary/multiclass classifications
+                       n_classes = 17,# number of classes
+                       label_to_class=None) # label_to_class can be None if there are too many classes or it is multilabel classification and the code will figure it out!
 
-if tfrecords_param['label_to_class'] == None:
-    lables = []
-    for label_name in os.listdir(data_dir):
-        if os.path.isdir('/'.join([data_dir, label_name])):
-            lables.append(label_name)
-    lables.sort()
-    label_to_class = {}
-    for i, j in enumerate(lables):
-        label_to_class[j] = i
-
-    tfrecords_param['label_to_class'] = label_to_class
+'''label_to_class={'hemmorhage_data': 0,
+                 'non_hemmorhage_data': 1}'''
 
 #######################################################################################################################
 # data parameters
 data_params = dict(tensor_records=True, # set False if inputs are raw jpg images
+                   classification_type='multilabel' , # binary, multiclass, multilabel
                     img_size=(256, 256, 3), # input image size
                     batch_size = 32,
                     augmentation = True, # Set false if no need for augmentation
@@ -83,8 +77,7 @@ data_params = dict(tensor_records=True, # set False if inputs are raw jpg images
  'InceptionV3', 'MobileNet', 'MobileNetV2', 'MobileNetV3Large', 'MobileNetV3Small', 'NASNetLarge', 'NASNetMobile', 'ResNet101', 'ResNet101V2', 'ResNet152', 'ResNet152V2', 'ResNet50', 
  'ResNet50V2', 'VGG16', 'VGG19', 'Xception']'''
 
-model_params = dict(multiclass=False, # False for binary classifications
-                    resize=True, # set true if it is ok to resize images during training based on the model proper input size
+model_params = dict(resize=True, # set true if it is ok to resize images during training based on the model proper input size
                     optimizer = 'adam', # adam, rmsprop, sgd
                     mixed_precision=False, # True if computations should be done in float16
                     model_name = 'Xception', # The model can be one of the tensorflow application pretrained models listed above
@@ -105,6 +98,32 @@ fine_tune_params = dict(lr=1e-4,
 
 #######################################################################################################################
 
-predict_param = dict(batch_size=100) # batch size is used to run predictions for batches of images
+predict_param = dict(batch_size=100,  # batch size is used to run predictions for batches of images
+                     model_name='fine-tune-min-val_loss.hdf5') # this model is assumed to be in the models_checkpoints folder)
 
+#######################################################################################################################
 
+# identify class labels from folder structure or csv file
+if tfrecords_param['label_to_class'] == None and data_params['classification_type'] != 'multilabel':
+    lables = []
+    for label_name in os.listdir(data_dir):
+        if os.path.isdir('/'.join([data_dir, label_name])):
+            lables.append(label_name)
+    lables.sort()
+    label_to_class = {}
+    for i, j in enumerate(lables):
+        label_to_class[j] = i
+
+    tfrecords_param['label_to_class'] = label_to_class
+
+if tfrecords_param['label_to_class'] == None and data_params['classification_type'] == 'multilabel':
+    df_train = pd.read_csv(f"{dir_params['data_dir']}/{tfrecords_param['multi_label_csv']}")
+
+    flatten = lambda l: [item for sublist in l for item in sublist]
+    labels = list(set(flatten([l.split(' ') for l in df_train['tags'].values])))
+
+    label_to_class = {l: i for i, l in enumerate(labels)}
+    tfrecords_param['label_to_class'] = label_to_class
+
+if tfrecords_param['n_classes'] == None:
+    tfrecords_param['n_classes'] = len(tfrecords_param['label_to_class'])

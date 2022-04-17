@@ -46,4 +46,5 @@ pydot
 graphviz
 segmentation_models
 keras_unet_collection
+cv2
 ```
