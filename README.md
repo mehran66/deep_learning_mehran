@@ -1,2 +1,2 @@
-# deep_learning_mehran
-My deep learning projects
+# Deep learning projects
+Deep learning packages for classificationa and segmentation of aerial imagery
