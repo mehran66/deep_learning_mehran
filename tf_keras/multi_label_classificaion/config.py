@@ -2,8 +2,9 @@
 Assumptions
 - Images are 3 band RGB in jpg format
 - Images are stored in different folders corresponding to each class. Folder name is used as class name
-- for multilabel classification, data folder includes the image folder with all images as 3 band RGB in jpg format and
-    one csv file that maps image name (with extension) to labels (space delimited labels)
+- For multilabel classification, data folder includes the image folder with all images as 3 band RGB in jpg format and
+    one csv file that maps image name (with extension) to labels (space delimited labels). The csv file should have only two
+    columns (image_name and tag)
 '''
 
 import os
@@ -18,7 +19,7 @@ os.chdir(dname)
 
 # Set data directory
 data_dir = r'D:\deep_learning_mehran\data\planet_test'
-# prediction directory where images are stored to be classified
+# prediction directory where images are stored to be classified. Set to None if no need to run the any predictions
 pred_dir = r'D:\deep_learning_mehran\data\test'
 
 # Set directories for saving model weights and tensorboard information
@@ -48,10 +49,10 @@ dir_params = dict(data_dir = data_dir,
 
 #######################################################################################################################
 # create tfrecords
-tfrecords_param = dict(shard_size=10000, # how many images per tfrecords
-                       img_size=(256, 256, 3), # input image size
-                       multi_label_csv='train_v2.csv', # set to input csv file name for multilabel classification and None for binary/multiclass classifications
-                       n_classes = 17,# number of classes
+tfrecords_param = dict(shard_size=100, # how many images per tfrecords
+                       img_size=(256, 256, 3), # input image size (256, 256, 3)
+                       multi_label_csv='train_v2.csv', # set to input csv file name (e.g., train_v2.csv) for multilabel classification and None for binary/multiclass classifications
+                       n_classes = None,# number of classes
                        label_to_class=None) # label_to_class can be None if there are too many classes or it is multilabel classification and the code will figure it out!
 
 '''label_to_class={'hemmorhage_data': 0,
@@ -77,7 +78,7 @@ data_params = dict(tensor_records=True, # set False if inputs are raw jpg images
  'InceptionV3', 'MobileNet', 'MobileNetV2', 'MobileNetV3Large', 'MobileNetV3Small', 'NASNetLarge', 'NASNetMobile', 'ResNet101', 'ResNet101V2', 'ResNet152', 'ResNet152V2', 'ResNet50', 
  'ResNet50V2', 'VGG16', 'VGG19', 'Xception']'''
 
-model_params = dict(resize=True, # set true if it is ok to resize images during training based on the model proper input size
+model_params = dict(resize=False, # set true if it is ok to resize images during training based on the model proper input size
                     optimizer = 'adam', # adam, rmsprop, sgd
                     mixed_precision=False, # True if computations should be done in float16
                     model_name = 'Xception', # The model can be one of the tensorflow application pretrained models listed above
@@ -87,19 +88,19 @@ model_params = dict(resize=True, # set true if it is ok to resize images during 
 #######################################################################################################################
 
 train_params = dict(lr=1e-3, #This is the initial lr. It decreases in each epoch
-                    n_epo=6)  # Number of epochs training only top layer
+                    n_epo=10)  # Number of epochs training only top layer
 
 
 
 #######################################################################################################################
 
-fine_tune_params = dict(lr=1e-4,
-                        n_epo=6)
+fine_tune_params = dict(lr=1e-4, # Initial learning rate
+                        n_epo=10)
 
 #######################################################################################################################
 
 predict_param = dict(batch_size=100,  # batch size is used to run predictions for batches of images
-                     model_name='fine-tune-min-val_loss.hdf5') # this model is assumed to be in the models_checkpoints folder)
+                     model_name='Xception_fine_tune_min_val_loss.hdf5') # this model is assumed to be in the models_checkpoints folder)
 
 #######################################################################################################################
 

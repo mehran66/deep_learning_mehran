@@ -79,36 +79,41 @@ def model_application(img_size, resize, strategy, model_name, weights, n_classes
 
         model = Model(inputs1, outputs)
 
-
-        if optimizer.lower() == 'adam':
-            optim = tf.keras.optimizers.Adam(learning_rate=lr)
-        elif optimizer.lower() == 'rmsprop':
-            optim = tf.keras.optimizers.RMSprop(learning_rate=lr)
-        elif optimizer.lower() == 'sgd':
-            optim = tf.keras.optimizers.SGD(learning_rate=lr)
-
-        if classification_type == 'multiclass':
-            loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
-            metrics = ["accuracy", FBetaScore(num_classes=n_classes, average='weighted', beta=2.0, threshold=0.5, name='fbeta')]
-            custom_objects = {'fbeta': FBetaScore}
-        elif classification_type == 'binary':
-            loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)
-            metrics = [tf.keras.metrics.BinaryAccuracy(name='accuracy'), tf.keras.metrics.Recall(name="recall"),
-                       tf.keras.metrics.Precision(name="precision"),
-                       tf.keras.metrics.AUC(name='AUC')]
-            custom_objects = {}
-        elif classification_type == 'multilabel':
-            loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)
-            metrics = [tf.keras.metrics.BinaryAccuracy(name='accuracy'), tf.keras.metrics.Recall(name="recall"),
-                       tf.keras.metrics.Precision(name="precision"),
-                       tf.keras.metrics.AUC(name='AUC'),
-                       FBetaScore(num_classes=n_classes, average='weighted', beta=2.0, threshold=0.5, name='fbeta')]
-            custom_objects = {'fbeta': FBetaScore}
+        optim, loss, metrics, custom_objects = define_compile(classification_type, n_classes, optimizer, lr)
 
         # Compile the model
         model.compile(loss=loss, optimizer=optim, metrics=metrics)
 
     return model, custom_objects
+
+def define_compile(classification_type, n_classes, optimizer, lr):
+
+    if optimizer.lower() == 'adam':
+        optim = tf.keras.optimizers.Adam(learning_rate=lr)
+    elif optimizer.lower() == 'rmsprop':
+        optim = tf.keras.optimizers.RMSprop(learning_rate=lr)
+    elif optimizer.lower() == 'sgd':
+        optim = tf.keras.optimizers.SGD(learning_rate=lr)
+
+    if classification_type == 'multiclass':
+        loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
+        metrics = ["accuracy", FBetaScore(num_classes=n_classes, average='weighted', beta=2.0, threshold=0.5, name='fbeta')]
+        custom_objects = {'fbeta': FBetaScore}
+    elif classification_type == 'binary':
+        loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)
+        metrics = [tf.keras.metrics.BinaryAccuracy(name='accuracy'), tf.keras.metrics.Recall(name="recall"),
+                   tf.keras.metrics.Precision(name="precision"),
+                   tf.keras.metrics.AUC(name='AUC')]
+        custom_objects = {}
+    elif classification_type == 'multilabel':
+        loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)
+        metrics = [tf.keras.metrics.BinaryAccuracy(name='accuracy'), tf.keras.metrics.Recall(name="recall"),
+                   tf.keras.metrics.Precision(name="precision"),
+                   tf.keras.metrics.AUC(name='AUC'),
+                   FBetaScore(num_classes=n_classes, average='weighted', beta=2.0, threshold=0.5, name='fbeta')]
+        custom_objects = {'fbeta': FBetaScore}
+
+    return optim, loss, metrics, custom_objects
 
     # ===============================================================================
     # tensorflow hub: it did not perform well

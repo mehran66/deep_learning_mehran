@@ -1,4 +1,4 @@
-# Image classification using CNN in Tensorflow/Keras
+# Image classification (binary, multiclass and multilabel) using CNN in Tensorflow/Keras
 
 ## steps
 ```cd ./tf_keras/classification```
@@ -26,7 +26,8 @@
 
 
 ## Pyton libraries used in the package
-```python 3.95
+```
+python 3.95
 tensorflow
 tensorflow-addons
 matplotlib

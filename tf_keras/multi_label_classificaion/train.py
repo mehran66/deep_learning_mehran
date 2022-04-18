@@ -14,8 +14,13 @@ from config import dir_params, tfrecords_param, data_params, model_params, train
 from model import model_application
 from load_data import strg, load_data
 from utils import perf_grid
+from callbacks import callbacks
 
 def train(assess_model = True):
+
+    print("\n######################################################")
+    print("#####################TRAIN MODEL######################")
+    print("######################################################")
 
     data_dir = dir_params['data_dir']
     plot_dir = dir_params['plot_dir']
@@ -40,13 +45,10 @@ def train(assess_model = True):
     class_to_label = {v: k for k, v in label_to_class.items()}
 
     print("\n######################################################")
-    print("read the inputs from the config.py file and load data")
-    print(f"data directory is: {data_dir}")
-    print(f"plot directory is: {plot_dir}")
+    print("read the inputs from the config.py file")
     print(f"tensorboad directory is: {tboard_dir}")
     print(f"model check points directory is: {model_check_points}")
     print(f"classification type is: {classification_type}")
-    print(f"image size is: {img_size}")
     print(f"number of epochs is: {epochs}")
     print(f"optimizer is: {optimizer}")
     print(f"resize is: {resize}")
@@ -54,7 +56,6 @@ def train(assess_model = True):
     print(f"mixed precision is: {mix_precision}")
     print(f"model name is: {model_name}")
     print(f"weights is: {weights}")
-    print(f"number of classes are: {n_classes}")
 
     strategy, tpu = strg()
 
@@ -68,73 +69,9 @@ def train(assess_model = True):
 
     start_time = time.time()
 
-    print("\n######################################################")
-    print("#####################TRAIN MODEL######################")
-    print("######################################################")
 
     # define callbacks
-
-    #reduce_lr
-    reduce_lr=tf.keras.callbacks.ReduceLROnPlateau(patience=5,
-                                factor=0.2,
-                                min_delta=1e-2,
-                                monitor='val_loss',
-                                verbose=1,
-                                mode='min',
-                                min_lr=1e-7)
-
-    #early stopping
-    early_stopping = tf.keras.callbacks.EarlyStopping(patience=20,
-                                 min_delta=1e-2,
-                                  monitor='val_loss',
-                                  restore_best_weights=True,
-                                  mode='min')
-
-    # Create ModelCheckpoint callback to save model's progress
-    checkpoint_path = os.path.join(model_check_points, 'training-min-val_loss.hdf5')
-    model_checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path,
-                                                          monitor="val_loss", # save the model weights with best validation loss
-                                                          mode='min',
-                                                          save_best_only=True, # only save the best weights
-                                                          save_weights_only=False, # only save model weights (not whole model)
-                                                          verbose=1) # don't print out whether or not model is being saved
-
-    # learning rate scheduler
-    def scheduler(epoch, lr):
-      if epoch < 5:
-        return lr
-      else:
-        return lr * tf.math.exp(-0.1)
-    lr_scheduler = tf.keras.callbacks.LearningRateScheduler(scheduler)
-
-    def show_lr_schedule(epochs=epochs, lr = 1e-3):
-        rng = [i for i in range(epochs)]
-        y=[]
-        for x in rng:
-            lr = scheduler(x, lr)
-            y.append(lr)
-        x = np.arange(epochs)
-        x_axis_labels = list(map(str, np.arange(1, epochs + 1)))
-        print('init lr {:.1e} to {:.1e} final {:.1e}'.format(y[0], max(y), y[-1]))
-
-        plt.figure(figsize=(10, 10))
-        plt.xticks(x, x_axis_labels, fontsize=8)  # set tick step to 1 and let x axis start at 1
-        plt.yticks(fontsize=8)
-        plt.plot(rng, y)
-        plt.grid()
-        #plt.show()
-        plt.savefig(f'{plot_dir}/train_step_learning_rate_scheduler.png')
-        plt.close()
-        print(f'leaning rate plot saved in {plot_dir}/train_step_learning_rate_scheduler.png')
-
-    show_lr_schedule(lr = lr)
-
-    # tensorboard_callback
-    log_dir = tboard_dir + "/logs-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=log_dir
-    )
-
+    reduce_lr, early_stopping, model_checkpoint, lr_scheduler, tensorboard_callback = callbacks(model_check_points, model_name, tboard_dir, plot_dir, epochs, lr, stage = 'train')
     print("callbacks were generated: reduce_lr, early_stopping, model_checkpoint, lr_scheduler, tensorboard_callback")
 
     model, custom_objects = model_application(img_size, resize, strategy, model_name, weights, n_classes, optimizer, lr, mix_precision, classification_type)
@@ -183,10 +120,9 @@ def train(assess_model = True):
     print(f"it took {(time.time() - start_time)} seconds to train the model")
 
     if assess_model:
-        print('\n***************************************************************')
+        print('\n######################################################')
         print("assess model")
-
-        loaded_saved_model = tf.keras.models.load_model(model_check_points + r'/training-min-val_loss.hdf5', custom_objects=custom_objects)
+        loaded_saved_model = tf.keras.models.load_model(os.path.join(model_check_points, model_name + f'_train_min_val_loss.hdf5'), custom_objects=custom_objects)
 
         # visualize training metrics
         acc = df_history['accuracy']
@@ -213,7 +149,7 @@ def train(assess_model = True):
         plt.savefig(f'{plot_dir}/train_step_loss_accuracy_plot.png')
         plt.close()
 
-        print("visualize training metrics. please check!****\n")
+        print("\nvisualize training metrics. please check!")
         print(f'{plot_dir}/train_step_loss_accuracy_plot.png')
 
         # Evaluate model (unsaved version) on the whole test dataset
@@ -312,7 +248,7 @@ def train(assess_model = True):
             print(f'{plot_dir}/train_step_confusion_matrix.png')
 
         else:
-            def confusion_matrix(yt, yp, classes):
+            def plot_confusion_matrix(yt, yp, classes):
                 instcount = yt.shape[0]
                 n_classes = classes.shape[0]
                 mtx = np.zeros((n_classes, 4))
@@ -339,7 +275,7 @@ def train(assess_model = True):
                 plt.savefig(f'{plot_dir}/train_step_confusion_matrix.png')
                 plt.close()
 
-            confusion_matrix(np.array(y_test), y_pred, np.array(list(label_to_class.keys())))
+            plot_confusion_matrix(np.array(y_test), y_pred, np.array(list(label_to_class.keys())))
             print("\nconfusion matrix using the test data. please check!")
             print(f'{plot_dir}/train_step_confusion_matrix.png')
 

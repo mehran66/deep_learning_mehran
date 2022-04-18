@@ -15,8 +15,14 @@ from tensorflow_addons.metrics import FBetaScore
 from config import dir_params, tfrecords_param, data_params, model_params, fine_tune_params
 from load_data import strg, load_data
 from utils import perf_grid
+from model import define_compile
+from callbacks import callbacks
 
 def fine_tune(assess_model = True):
+
+    print("\n######################################################")
+    print("#####################FINE TUNING######################")
+    print("######################################################")
 
     data_dir = dir_params['data_dir']
     plot_dir = dir_params['plot_dir']
@@ -30,6 +36,7 @@ def fine_tune(assess_model = True):
 
     optimizer = model_params['optimizer']
     mixed_precision = model_params['mixed_precision']
+    model_name = model_params['model_name']
 
     train_ds, val_ds, test_ds = load_data(assess_data=False)
     n_classes = tfrecords_param['n_classes']
@@ -39,8 +46,6 @@ def fine_tune(assess_model = True):
 
     print("\n######################################################")
     print("read the the config.py file for fine tuning")
-    print(f"data directory is: {data_dir}")
-    print(f"plot directory is: {plot_dir}")
     print(f"tensorboad directory is: {tboard_dir}")
     print(f"model check points directory is: {model_check_points}")
     print(f"classification type is: {classification_type}")
@@ -48,10 +53,9 @@ def fine_tune(assess_model = True):
     print(f"optimizer is: {optimizer}")
     print(f"learning rate is: {lr}")
     print(f"mixed precision is: {mixed_precision}")
-    print(f"number of classes are: {n_classes}")
-
 
     strategy, tpu = strg()
+
     if mixed_precision:
         if tpu:
             mixed_precision.set_global_policy(policy="mixed_bfloat16")
@@ -61,123 +65,17 @@ def fine_tune(assess_model = True):
 
     start_time = time.time()
 
-    print("\n######################################################")
-    print("#####################FINE TUNING######################")
-    print("######################################################")
+    # define callbacks
+    reduce_lr, early_stopping, model_checkpoint, lr_scheduler, tensorboard_callback = callbacks(model_check_points, model_name, tboard_dir, plot_dir, epochs, lr, stage = 'fine_tune')
+    print("callbacks were generated: reduce_lr, early_stopping, model_checkpoint, lr_scheduler, tensorboard_callback")
 
-
-    # define call backs
-    #reduce_lr
-    reduce_lr=tf.keras.callbacks.ReduceLROnPlateau(patience=5,
-                                factor=0.2,
-                                min_delta=1e-2,
-                                monitor='val_loss',
-                                verbose=1,
-                                mode='min',
-                                min_lr=1e-7)
-
-    #early stopping
-    early_stopping = tf.keras.callbacks.EarlyStopping(patience=20,
-                                 min_delta=1e-2,
-                                  monitor='val_loss',
-                                  restore_best_weights=True,
-                                  mode='min')
-
-
-    # Create ModelCheckpoint callback to save model's progress
-    checkpoint_path = os.path.join(model_check_points, 'fine-tune-min-val_loss.hdf5')
-    model_checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path,
-                                                          monitor="val_loss", # save the model weights with best validation accuracy
-                                                          mode='min',
-                                                          save_best_only=True, # only save the best weights
-                                                          save_weights_only=False, # only save model weights (not whole model)
-                                                          verbose=1) # don't print out whether or not model is being saved
-
-
-    # tensorboard_callback
-    log_dir = tboard_dir + "/logs-fine-tune-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=log_dir
-    )
-
-
-    '''
-    exponential warmup with cosine decay
-    The learning rate used is a exponential warmup with cosine decay. 
-    The warmup is used to prevent the model from early overfitting on the first images.
-    When the model starts learning the loss will be high as the model is trained on ImageNet, not on the training dataset.
-    When starting with a high learning rate the model will learn the first few batches very well due to the high loss and could overfit on those samples. 
-    When starting with a very low learning rate the model will see all training images and make small adjustment to the weights and therefore learn 
-    from all training images equally when the loss is high and weights are modified strongly.
-    '''
-    def lrfn(epoch, epochs):
-        # Config
-        LR_START = 1e-6
-        LR_MAX = 1e-4
-        LR_FINAL = 1e-6
-        LR_RAMPUP_EPOCHS = 4
-        LR_SUSTAIN_EPOCHS = 0
-        DECAY_EPOCHS = epochs  - LR_RAMPUP_EPOCHS - LR_SUSTAIN_EPOCHS - 1
-        LR_EXP_DECAY = (LR_FINAL / LR_MAX) ** (1 / (epochs - LR_RAMPUP_EPOCHS - LR_SUSTAIN_EPOCHS - 1))
-
-        if epoch < LR_RAMPUP_EPOCHS: # exponential warmup
-            lr = LR_START + (LR_MAX + LR_START) * (epoch / LR_RAMPUP_EPOCHS) ** 2.5
-        elif epoch < LR_RAMPUP_EPOCHS + LR_SUSTAIN_EPOCHS: # sustain lr
-            lr = LR_MAX
-        else: # cosine decay
-            epoch_diff = epoch - LR_RAMPUP_EPOCHS - LR_SUSTAIN_EPOCHS
-            decay_factor = (epoch_diff / DECAY_EPOCHS) * math.pi
-            decay_factor= (tf.math.cos(decay_factor).numpy() + 1) / 2
-            lr = LR_FINAL + (LR_MAX - LR_FINAL) * decay_factor
-
-        return lr
-
-    lr_scheduler = tf.keras.callbacks.LearningRateScheduler(lambda epoch: lrfn(epoch, epochs=epochs), verbose=1)
-
-
-    def show_lr_schedule(epochs=epochs):
-        rng = [i for i in range(epochs)]
-        y = [lrfn(x, epochs=epochs) for x in rng]
-        x = np.arange(epochs)
-        x_axis_labels = list(map(str, np.arange(1, epochs + 1)))
-        print('init lr {:.1e} to {:.1e} final {:.1e}'.format(y[0], max(y), y[-1]))
-
-        plt.figure(figsize=(10, 10))
-        plt.xticks(x, x_axis_labels, fontsize=8)  # set tick step to 1 and let x axis start at 1
-        plt.yticks(fontsize=8)
-        plt.plot(rng, y)
-        plt.grid()
-        #plt.show()
-        plt.savefig(f'{plot_dir}/fine_tune_learning_rate_scheduler.png')
-        plt.close()
-        print(f'leaning rate plot saved in {plot_dir}/fine_tune_learning_rate_scheduler.png')
-
-
-    show_lr_schedule()
 
     with strategy.scope():
 
-        if classification_type == 'multiclass':
-            loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
-            metrics = ["accuracy",
-                       FBetaScore(num_classes=n_classes, average='weighted', beta=2.0, threshold=0.5, name='fbeta')]
-            custom_objects = {'fbeta': FBetaScore}
-        elif classification_type == 'binary':
-            loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)
-            metrics = [tf.keras.metrics.BinaryAccuracy(name='accuracy'), tf.keras.metrics.Recall(name="recall"),
-                       tf.keras.metrics.Precision(name="precision"),
-                       tf.keras.metrics.AUC(name='AUC')]
-            custom_objects = {}
-        elif classification_type == 'multilabel':
-            loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)
-            metrics = [tf.keras.metrics.BinaryAccuracy(name='accuracy'), tf.keras.metrics.Recall(name="recall"),
-                       tf.keras.metrics.Precision(name="precision"),
-                       tf.keras.metrics.AUC(name='AUC'),
-                       FBetaScore(num_classes=n_classes, average='weighted', beta=2.0, threshold=0.5, name='fbeta')]
-            custom_objects = {'fbeta': FBetaScore}
+        optim, loss, metrics, custom_objects = define_compile(classification_type, n_classes, optimizer, lr)
 
     # load trained model
-        loaded_saved_model = tf.keras.models.load_model(model_check_points + r'/training-min-val_loss.hdf5', custom_objects=custom_objects)
+        loaded_saved_model = tf.keras.models.load_model(os.path.join(model_check_points, model_name + f'_train_min_val_loss.hdf5'), custom_objects=custom_objects)
         print("Pretrained model was loaded:")
         print(model_check_points + r'/training-min-val_loss.hdf5')
 
@@ -189,14 +87,6 @@ def fine_tune(assess_model = True):
         # Check the layers in the base model and see what dtype policy they're using
         # for layer in loaded_saved_model.layers[4].layers:
         #   print(layer.name, layer.trainable, layer.dtype, layer.dtype_policy)
-
-        # Compile the model
-        if optimizer.lower() == 'adam':
-            optim = tf.keras.optimizers.Adam(learning_rate=lr)
-        elif optimizer.lower() == 'rmsprop':
-            optim = tf.keras.optimizers.RMSprop(learning_rate=lr)
-        elif optimizer.lower() == 'sgd':
-            optim = tf.keras.optimizers.SGD(learning_rate=lr)
 
         loaded_saved_model.compile(loss=loss,optimizer=optim,metrics=metrics)
 
@@ -219,7 +109,7 @@ def fine_tune(assess_model = True):
     if assess_model:
         print("\n######################################################")
         print("load and assess the model ...")
-        loaded_saved_model = tf.keras.models.load_model(model_check_points + r'/fine-tune-min-val_loss.hdf5', custom_objects=custom_objects)
+        loaded_saved_model = tf.keras.models.load_model(os.path.join(model_check_points, model_name + f'_fine_tune_min_val_loss.hdf5'), custom_objects=custom_objects)
 
         # visualize training metrics
 
@@ -308,9 +198,9 @@ def fine_tune(assess_model = True):
                 plt.text(fp[i], tp[i], thresholds[i])
 
             #plt.show()
-            plt.savefig(f'{plot_dir}/train_step_ROC_AUC.png')
+            plt.savefig(f'{plot_dir}/fine_tune_step_ROC_AUC.png')
             plt.close()
-            print(f'ROC AUC plot was saved in {plot_dir}/train_step_ROC_AUC.png')
+            print(f'ROC AUC plot was saved in {plot_dir}/fine_tune_step_ROC_AUC.png')
 
         if classification_type != 'multilabel':
             def plot_confusion_matrix(cm, classes, title='Confusion Matrix', cmap=plt.cm.Blues):
@@ -349,7 +239,7 @@ def fine_tune(assess_model = True):
 
 
         else:
-            def confusion_matrix(yt, yp, classes):
+            def plot_confusion_matrix(yt, yp, classes):
                 instcount = yt.shape[0]
                 n_classes = classes.shape[0]
                 mtx = np.zeros((n_classes, 4))
@@ -373,12 +263,12 @@ def fine_tune(assess_model = True):
                 plt.ylabel('labels')
                 plt.xlabel('True-Predicted')
                 #plt.show()
-                plt.savefig(f'{plot_dir}/train_step_confusion_matrix.png')
+                plt.savefig(f'{plot_dir}/fine_tune_step_confusion_matrix.png')
                 plt.close()
 
-            confusion_matrix(np.array(y_test), y_pred, np.array(list(label_to_class.keys())))
+            plot_confusion_matrix(np.array(y_test), y_pred, np.array(list(label_to_class.keys())))
             print("\nconfusion matrix using the test data. please check!")
-            print(f'{plot_dir}/train_step_confusion_matrix.png')
+            print(f'{plot_dir}/fine_tune_step_confusion_matrix.png')
 
 
 
@@ -393,7 +283,7 @@ def fine_tune(assess_model = True):
             y_prob = loaded_saved_model.predict(image_batch, verbose=1)
 
             # visualize 10 images from dataset
-            plt.figure(figsize=(10, 10))
+            plt.figure(figsize=(20, 10))
             for i in range(9):
                 # retrieve ith image from current batch and show
                 ax = plt.subplot(3, 3, i + 1)

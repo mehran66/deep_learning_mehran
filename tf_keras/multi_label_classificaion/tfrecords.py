@@ -204,7 +204,7 @@ def get_dataset(tfr_dir: str = "/content", pattern: str = "*.tfrecords", mode='s
     files = glob.glob(tfr_dir + r'/' +  pattern, recursive=False)
 
     nbr_images = sum(1 for _ in tf.data.TFRecordDataset(files))
-    print(f"there are {nbr_images} images encoded in the input rfrecords")
+    print(f"Read tfrecords .... there are {nbr_images} images encoded in the input rfrecords")
 
     ignore_order = tf.data.Options()
     ignore_order.experimental_deterministic = False  # disable order, increase speed
@@ -344,7 +344,7 @@ def tfrecord(assess_data=True):
         except:
             print(f"number of images are smaller than the requested dataset for plots")
 
-        print("*****tfrecords were imported and tested. Some sample images and labels plotted in the following file. please check!****\n")
+        print("\ntfrecords were imported and tested. Some sample images and labels plotted in the following file. please check!")
         print(f'{plot_dir}/tf_records_sample_images.png')
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import tqdm as tq
 from sklearn.metrics import fbeta_score
 import numpy as np
 import pandas as pd
+import os
 
 def png2jpg(data_dir, rm = False):
 
@@ -18,6 +19,50 @@ def png2jpg(data_dir, rm = False):
 
                     if rm:
                         os.remove('/'.join([data_dir, label_name, img_name]))
+
+def tif_converter(data_dir, output_format='JPEG', jpg_quality= 100, remove_old = False):
+    # output_format: JPEG, PNG
+    for root, dirs, files in os.walk(data_dir, topdown=False):
+        for name in files:
+            if os.path.splitext(os.path.join(root, name))[1].lower() in [".tiff", ".tif"]:
+                if os.path.isfile(os.path.splitext(os.path.join(root, name))[0] + ".jpg"):
+                    print("A jpeg file already exists for %s" % name)
+                else:
+                    try:
+                        im = Image.open(os.path.join(root, name))
+                        im.thumbnail(im.size)
+                        if output_format == 'JPEG':
+                            outfile = os.path.splitext(os.path.join(root, name))[0] + ".jpg"
+                            im.save(outfile, 'JPEG', quality=jpg_quality)
+                        elif output_format == 'PNG':
+                            outfile = os.path.splitext(os.path.join(root, name))[0] + ".png"
+                            im.save(outfile, 'PNG')
+
+                        if remove_old == True:
+                            os.remove(os.path.join(root, name))
+
+                    except Exception as e:
+                        print(e)
+
+
+def multilabeldummytotag(input, output, starting_col=1):
+    '''
+    This function covert multi label attributes as dummy columns to a single col with space delimited labels
+
+    :param starting_col:
+    :param input: a csv including image name and all of the class attributes as dummy columns
+    :param output: wehre to save the output csv
+    '''
+    df = pd.read_csv(input)
+    col = list(df.columns[starting_col:])
+
+    def apply(row):
+        indices = np.where(row[1:] == 1)[0]
+        tag_list = np.take(col, indices).tolist()
+        return ' '.join(tag_list)
+
+    df['tag'] = df.apply(apply, axis=1)
+    df.to_csv(output)
 
 
 # calculate optimum threshold for each class in a multi label classification
@@ -74,7 +119,12 @@ def perf_grid(y_hat_val, y_val, label_names, n_thresh=100):
 
 
 if __name__ == "__main__":
-    png2jpg(r'C:\Users\mehra\OneDrive\Desktop\deep_learning\data\BrainTumor', rm=True)
+
+    data_dir = r'C:\Users\mehra\Downloads\test'
+
+    #png2jpg(data_dir, rm=True)
+
+    tif_converter(data_dir, output_format='JPEG', jpg_quality=100, remove_old=True)
 
 
 

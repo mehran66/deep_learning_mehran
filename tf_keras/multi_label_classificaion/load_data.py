@@ -162,25 +162,6 @@ def load_data(assess_data=True):
 
             parsed_dataset = parsed_dataset.map(process_path, num_parallel_calls=tf.data.AUTOTUNE)
 
-    # image_batch, label_batch = next(iter(parsed_dataset))
-    # image_batch
-    # image = tf.io.read_file(image_batch)
-    # image = tf.io.decode_raw(image, tf.uint8)
-    #
-    # image = tf.io.decode_jpeg(image, channels=3)
-    # tf.io.parse_tensor(image, out_type=tf.uint8)
-    #
-    # image = tf.reshape(image, shape=[height, width, channel_image])
-    # tf.io.decode_image(
-    #     image,
-    #     channels=None,
-    #     dtype=tf.dtypes.uint8)
-    #
-    # tf.cast(image_batch, tf.uint8)
-    # image = tf.io.read_file(tf.cast(image_batch, tf.uint8))
-
-
-
     # generate training/validation/test dataset
     assert (train_split + test_split + val_split) == 1
 
@@ -408,8 +389,6 @@ def load_data(assess_data=True):
 
             # compute the co-ocurrence matrix
             show_cooccurence_matrix(list(label_to_class.keys()))
-
-    print("\ndata loaded successfully")
 
     return train_ds, val_ds, test_ds
 
