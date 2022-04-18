@@ -15,6 +15,7 @@ from config import dir_params, tfrecords_param, data_params, model_params, train
 from model import model_application
 from load_data import strg, load_data
 from postprocess import measure_mask
+from callbacks import callbacks
 
 from focal_loss import BinaryFocalLoss, SparseCategoricalFocalLoss
 import segmentation_models as sm
@@ -61,8 +62,6 @@ def train(assess_model=True):
 
     print("\n######################################################")
     print("read the inputs from the config.py file and load data")
-    print(f"data directory is: {data_dir}")
-    print(f"plot directory is: {plot_dir}")
     print(f"tensorboad directory is: {tboard_dir}")
     print(f"model check points directory is: {model_check_points}")
     print(f"image size is: {img_size}")
@@ -100,72 +99,7 @@ def train(assess_model=True):
     start_time = time.time()
 
     # define callbacks
-
-    # reduce_lr
-    reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(patience=5,
-                                                     factor=0.2,
-                                                     min_delta=1e-2,
-                                                     monitor='val_loss',
-                                                     verbose=1,
-                                                     mode='min',
-                                                     min_lr=1e-7)
-
-    # early stopping
-    early_stopping = tf.keras.callbacks.EarlyStopping(patience=20,
-                                                      min_delta=1e-2,
-                                                      monitor='val_loss',
-                                                      restore_best_weights=True,
-                                                      mode='min')
-
-    # Create ModelCheckpoint callback to save model's progress
-    # training_ep{epoch:03d}-loss{loss:.3f}-val_loss{val_loss:.3f}-val_accuracy{val_accuracy:.3f}-val_IoU{val_IoU:.3f}.hdf5
-    checkpoint_path = os.path.join(model_check_points, 'train_val_IoU_max.hdf5')
-    model_checkpoint = tf.keras.callbacks.ModelCheckpoint(checkpoint_path,
-                                                          monitor="val_IoU",
-                                                          # save the model weights with best validation accuracy
-                                                          mode='max',
-                                                          save_best_only=True,  # only save the best weights
-                                                          save_weights_only=False,
-                                                          # only save model weights (not whole model)
-                                                          verbose=1)  # don't print out whether or not model is being saved
-
-
-    # learning rate scheduler
-    def scheduler(epoch, lr):
-        if epoch < 5:
-            return lr
-        else:
-            return lr * tf.math.exp(-0.1)
-
-    lr_scheduler = tf.keras.callbacks.LearningRateScheduler(scheduler)
-
-    def show_lr_schedule(epochs=epochs, lr=1e-3):
-        rng = [i for i in range(epochs)]
-        y = []
-        for x in rng:
-            lr = scheduler(x, lr)
-            y.append(lr)
-        x = np.arange(epochs)
-        x_axis_labels = list(map(str, np.arange(1, epochs + 1)))
-        print('init lr {:.1e} to {:.1e} final {:.1e}'.format(y[0], max(y), y[-1]))
-
-        plt.figure(figsize=(10, 10))
-        plt.xticks(x, x_axis_labels, fontsize=8)  # set tick step to 1 and let x axis start at 1
-        plt.yticks(fontsize=8)
-        plt.plot(rng, y)
-        plt.grid()
-        # plt.show()
-        plt.savefig(f'{plot_dir}/train_step_learning_rate_scheduler.png')
-        plt.close()
-
-    show_lr_schedule(lr=1e-3)
-
-    # tensorboard_callback
-    log_dir = tboard_dir + "/logs-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(
-        log_dir=log_dir
-    )
-
+    reduce_lr, early_stopping, model_checkpoint, lr_scheduler, tensorboard_callback = callbacks(model_check_points, main_model_name, backbone_model_name, tboard_dir, plot_dir, epochs, lr, stage = 'train')
     print("callbacks were generated: reduce_lr, early_stopping, model_checkpoint, lr_scheduler, tensorboard_callback")
 
     model, custom_objects = model_application(img_size, resize, strategy, backbone_model_name, main_model_name, model_type, weights, multiclass,
@@ -220,7 +154,7 @@ def train(assess_model=True):
         print('\n***************************************************************')
         print("assess model")
 
-        loaded_saved_model = tf.keras.models.load_model(model_check_points + r'/train_val_IoU_max.hdf5', custom_objects=custom_objects)
+        loaded_saved_model = tf.keras.models.load_model(os.path.join(model_check_points, f'{main_model_name}_{str(backbone_model_name)}_train_val_IoU_max.hdf5'), custom_objects=custom_objects)
 
         # visualize training metrics
         acc = df_history['accuracy']
